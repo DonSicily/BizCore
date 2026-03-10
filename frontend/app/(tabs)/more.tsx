@@ -206,6 +206,35 @@ export default function MoreScreen() {
             leftIcon="home-outline"
             onPress={() => setShowWarehouseModal(true)}
           />
+          <ListItem
+            title="Audit Logs"
+            subtitle="Track system activity"
+            leftIcon="time-outline"
+            onPress={() => router.push('/audit-logs')}
+          />
+        </View>
+
+        {/* Sales & Purchases */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Sales & Purchases</Text>
+          <ListItem
+            title="Quotations"
+            subtitle="Manage sales quotes"
+            leftIcon="document-text-outline"
+            onPress={() => router.push('/quotations')}
+          />
+          <ListItem
+            title="Delivery Notes"
+            subtitle="Track shipments"
+            leftIcon="car-outline"
+            onPress={() => router.push('/delivery-notes')}
+          />
+          <ListItem
+            title="Bill of Materials"
+            subtitle="Production recipes"
+            leftIcon="construct-outline"
+            onPress={() => router.push('/bom')}
+          />
         </View>
 
         {/* Reports Section */}
