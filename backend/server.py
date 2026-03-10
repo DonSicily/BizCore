@@ -1955,8 +1955,15 @@ async def update_quotation_status(quotation_id: str, status: QuotationStatus, us
     return await db.quotations.find_one({"quotation_id": quotation_id}, {"_id": 0})
 
 @api_router.post("/quotations/{quotation_id}/convert-to-order")
-async def convert_quotation_to_order(quotation_id: str, warehouse_id: str, user: User = Depends(get_current_user)):
+async def convert_quotation_to_order(
+    quotation_id: str,
+    warehouse_id: str = None,
+    user: User = Depends(get_current_user)
+):
     """Convert accepted quotation to sales order"""
+    if not warehouse_id:
+        raise HTTPException(status_code=400, detail="warehouse_id is required")
+    
     quotation = await db.quotations.find_one({"quotation_id": quotation_id}, {"_id": 0})
     if not quotation:
         raise HTTPException(status_code=404, detail="Quotation not found")
@@ -2534,6 +2541,8 @@ async def get_customer_aging_report(user: User = Depends(get_current_user)):
         due_date = inv.get("due_date")
         if isinstance(due_date, str):
             due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+        elif due_date and due_date.tzinfo is None:
+            due_date = due_date.replace(tzinfo=timezone.utc)
         
         days_overdue = (today - due_date).days if due_date else 0
         outstanding = inv["total"] - inv.get("paid_amount", 0)
