@@ -104,6 +104,25 @@ class UserRole(str, Enum):
     ACCOUNTANT = "accountant"
     VIEWER = "viewer"
 
+class RequisitionStatus(str, Enum):
+    DRAFT = "draft"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CONVERTED = "converted"
+
+class GRNStatus(str, Enum):
+    PENDING = "pending"
+    RECEIVED = "received"
+    PARTIAL = "partial"
+    REJECTED = "rejected"
+
+class MatchingStatus(str, Enum):
+    UNMATCHED = "unmatched"
+    PARTIAL_MATCH = "partial_match"
+    FULL_MATCH = "full_match"
+    DISCREPANCY = "discrepancy"
+
 # ========================
 # PYDANTIC MODELS
 # ========================
@@ -355,6 +374,113 @@ class PurchaseOrderUpdate(BaseModel):
     status: Optional[OrderStatus] = None
     expected_date: Optional[datetime] = None
     notes: Optional[str] = None
+
+# Purchase Requisition Models
+class RequisitionItem(BaseModel):
+    item_id: str = Field(default_factory=lambda: f"ri_{uuid.uuid4().hex[:12]}")
+    product_id: str
+    product_name: Optional[str] = None
+    quantity: float
+    estimated_unit_price: float = 0.0
+    reason: Optional[str] = None
+
+class PurchaseRequisition(BaseModel):
+    requisition_id: str = Field(default_factory=lambda: f"req_{uuid.uuid4().hex[:12]}")
+    requisition_number: str
+    requested_by: str
+    requested_by_name: Optional[str] = None
+    department: Optional[str] = None
+    priority: str = "normal"  # low, normal, high, urgent
+    required_date: Optional[datetime] = None
+    status: RequisitionStatus = RequisitionStatus.DRAFT
+    items: List[RequisitionItem] = []
+    total_estimated: float = 0.0
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
+    converted_po_id: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class RequisitionItemCreate(BaseModel):
+    product_id: str
+    quantity: float
+    estimated_unit_price: float = 0.0
+    reason: Optional[str] = None
+
+class PurchaseRequisitionCreate(BaseModel):
+    department: Optional[str] = None
+    priority: str = "normal"
+    required_date: Optional[datetime] = None
+    items: List[RequisitionItemCreate] = []
+    notes: Optional[str] = None
+
+# Goods Receipt Note (GRN) Models
+class GRNItem(BaseModel):
+    item_id: str = Field(default_factory=lambda: f"grni_{uuid.uuid4().hex[:12]}")
+    po_item_id: str
+    product_id: str
+    product_name: Optional[str] = None
+    ordered_quantity: float
+    received_quantity: float
+    accepted_quantity: float
+    rejected_quantity: float = 0.0
+    rejection_reason: Optional[str] = None
+    unit_price: float
+
+class GoodsReceiptNote(BaseModel):
+    grn_id: str = Field(default_factory=lambda: f"grn_{uuid.uuid4().hex[:12]}")
+    grn_number: str
+    po_id: str
+    po_number: str
+    supplier_id: str
+    supplier_name: Optional[str] = None
+    warehouse_id: str
+    received_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    status: GRNStatus = GRNStatus.PENDING
+    items: List[GRNItem] = []
+    total_amount: float = 0.0
+    received_by: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class GRNItemCreate(BaseModel):
+    po_item_id: str
+    product_id: str
+    received_quantity: float
+    accepted_quantity: float
+    rejected_quantity: float = 0.0
+    rejection_reason: Optional[str] = None
+
+class GRNCreate(BaseModel):
+    po_id: str
+    warehouse_id: str
+    items: List[GRNItemCreate] = []
+    notes: Optional[str] = None
+
+# 3-Way Matching Model
+class ThreeWayMatch(BaseModel):
+    match_id: str = Field(default_factory=lambda: f"match_{uuid.uuid4().hex[:12]}")
+    po_id: str
+    po_number: str
+    grn_id: str
+    grn_number: str
+    invoice_id: str
+    invoice_number: str
+    supplier_id: str
+    supplier_name: Optional[str] = None
+    status: MatchingStatus = MatchingStatus.UNMATCHED
+    po_total: float = 0.0
+    grn_total: float = 0.0
+    invoice_total: float = 0.0
+    variance: float = 0.0
+    variance_percent: float = 0.0
+    discrepancies: List[dict] = []
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # Sales Order Models
 class SalesOrderItem(BaseModel):
@@ -3277,6 +3403,762 @@ async def generate_barcode(product_id: str, user: User = Depends(get_current_use
     )
     
     return {"product_id": product_id, "barcode": barcode}
+
+# ========================
+# PURCHASE REQUISITIONS API
+# ========================
+
+@api_router.get("/requisitions")
+async def list_requisitions(
+    status: Optional[RequisitionStatus] = None,
+    priority: Optional[str] = None,
+    user: User = Depends(get_current_user)
+):
+    """List all purchase requisitions"""
+    query = {}
+    if status:
+        query["status"] = status.value
+    if priority:
+        query["priority"] = priority
+    
+    requisitions = await db.requisitions.find(query).sort("created_at", -1).to_list(100)
+    return requisitions
+
+@api_router.get("/requisitions/{requisition_id}")
+async def get_requisition(requisition_id: str, user: User = Depends(get_current_user)):
+    """Get requisition by ID"""
+    req = await db.requisitions.find_one({"requisition_id": requisition_id})
+    if not req:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    return req
+
+@api_router.post("/requisitions")
+async def create_requisition(data: PurchaseRequisitionCreate, user: User = Depends(get_current_user)):
+    """Create a new purchase requisition"""
+    # Generate requisition number
+    count = await db.requisitions.count_documents({})
+    req_number = f"REQ-{datetime.now().strftime('%Y%m')}-{str(count + 1).zfill(4)}"
+    
+    # Build items with product names
+    items = []
+    total = 0.0
+    for item_data in data.items:
+        product = await db.products.find_one({"product_id": item_data.product_id})
+        item = RequisitionItem(
+            product_id=item_data.product_id,
+            product_name=product["name"] if product else None,
+            quantity=item_data.quantity,
+            estimated_unit_price=item_data.estimated_unit_price,
+            reason=item_data.reason
+        )
+        items.append(item.model_dump())
+        total += item_data.quantity * item_data.estimated_unit_price
+    
+    requisition = PurchaseRequisition(
+        requisition_number=req_number,
+        requested_by=user.user_id,
+        requested_by_name=user.name,
+        department=data.department,
+        priority=data.priority,
+        required_date=data.required_date,
+        items=items,
+        total_estimated=total,
+        notes=data.notes
+    )
+    
+    await db.requisitions.insert_one(requisition.model_dump())
+    await create_audit_log(user.user_id, "create", "requisition", requisition.requisition_id, None, requisition.model_dump())
+    
+    return requisition.model_dump()
+
+@api_router.put("/requisitions/{requisition_id}/submit")
+async def submit_requisition(requisition_id: str, user: User = Depends(get_current_user)):
+    """Submit requisition for approval"""
+    req = await db.requisitions.find_one({"requisition_id": requisition_id})
+    if not req:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    
+    if req["status"] != "draft":
+        raise HTTPException(status_code=400, detail="Only draft requisitions can be submitted")
+    
+    await db.requisitions.update_one(
+        {"requisition_id": requisition_id},
+        {"$set": {"status": "pending", "updated_at": datetime.now(timezone.utc)}}
+    )
+    
+    return {"message": "Requisition submitted for approval"}
+
+@api_router.put("/requisitions/{requisition_id}/approve")
+async def approve_requisition(requisition_id: str, user: User = Depends(get_current_user)):
+    """Approve a purchase requisition"""
+    if user.role not in [UserRole.SUPER_ADMIN, UserRole.MANAGER]:
+        raise HTTPException(status_code=403, detail="Only managers can approve requisitions")
+    
+    req = await db.requisitions.find_one({"requisition_id": requisition_id})
+    if not req:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    
+    if req["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Only pending requisitions can be approved")
+    
+    await db.requisitions.update_one(
+        {"requisition_id": requisition_id},
+        {"$set": {
+            "status": "approved",
+            "approved_by": user.user_id,
+            "approved_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
+        }}
+    )
+    
+    await create_audit_log(user.user_id, "update_status", "requisition", requisition_id, {"status": "pending"}, {"status": "approved"})
+    
+    return {"message": "Requisition approved"}
+
+@api_router.put("/requisitions/{requisition_id}/reject")
+async def reject_requisition(requisition_id: str, reason: str = "", user: User = Depends(get_current_user)):
+    """Reject a purchase requisition"""
+    if user.role not in [UserRole.SUPER_ADMIN, UserRole.MANAGER]:
+        raise HTTPException(status_code=403, detail="Only managers can reject requisitions")
+    
+    req = await db.requisitions.find_one({"requisition_id": requisition_id})
+    if not req:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    
+    await db.requisitions.update_one(
+        {"requisition_id": requisition_id},
+        {"$set": {
+            "status": "rejected",
+            "rejection_reason": reason,
+            "approved_by": user.user_id,
+            "approved_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
+        }}
+    )
+    
+    return {"message": "Requisition rejected"}
+
+@api_router.post("/requisitions/{requisition_id}/convert-to-po")
+async def convert_requisition_to_po(
+    requisition_id: str,
+    supplier_id: str,
+    warehouse_id: str,
+    user: User = Depends(get_current_user)
+):
+    """Convert approved requisition to Purchase Order"""
+    req = await db.requisitions.find_one({"requisition_id": requisition_id})
+    if not req:
+        raise HTTPException(status_code=404, detail="Requisition not found")
+    
+    if req["status"] != "approved":
+        raise HTTPException(status_code=400, detail="Only approved requisitions can be converted")
+    
+    # Get supplier info
+    supplier = await db.suppliers.find_one({"supplier_id": supplier_id})
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    
+    # Create PO number
+    count = await db.purchase_orders.count_documents({})
+    po_number = f"PO-{datetime.now().strftime('%Y%m')}-{str(count + 1).zfill(4)}"
+    
+    # Convert items
+    po_items = []
+    subtotal = 0.0
+    for item in req["items"]:
+        po_item = PurchaseOrderItem(
+            product_id=item["product_id"],
+            product_name=item.get("product_name"),
+            quantity=item["quantity"],
+            unit_price=item["estimated_unit_price"]
+        )
+        po_items.append(po_item.model_dump())
+        subtotal += item["quantity"] * item["estimated_unit_price"]
+    
+    po = PurchaseOrder(
+        po_number=po_number,
+        supplier_id=supplier_id,
+        supplier_name=supplier["name"],
+        warehouse_id=warehouse_id,
+        expected_date=req.get("required_date"),
+        items=po_items,
+        subtotal=subtotal,
+        total_amount=subtotal,
+        notes=f"Converted from {req['requisition_number']}",
+        created_by=user.user_id
+    )
+    
+    await db.purchase_orders.insert_one(po.model_dump())
+    
+    # Update requisition
+    await db.requisitions.update_one(
+        {"requisition_id": requisition_id},
+        {"$set": {"status": "converted", "converted_po_id": po.po_id, "updated_at": datetime.now(timezone.utc)}}
+    )
+    
+    await create_audit_log(user.user_id, "create", "purchase_order", po.po_id, None, {"from_requisition": requisition_id})
+    
+    return {"message": "Requisition converted to PO", "po_id": po.po_id, "po_number": po_number}
+
+# ========================
+# GOODS RECEIPT NOTES (GRN) API
+# ========================
+
+@api_router.get("/grn")
+async def list_grns(
+    status: Optional[GRNStatus] = None,
+    po_id: Optional[str] = None,
+    user: User = Depends(get_current_user)
+):
+    """List all Goods Receipt Notes"""
+    query = {}
+    if status:
+        query["status"] = status.value
+    if po_id:
+        query["po_id"] = po_id
+    
+    grns = await db.grns.find(query).sort("created_at", -1).to_list(100)
+    return grns
+
+@api_router.get("/grn/{grn_id}")
+async def get_grn(grn_id: str, user: User = Depends(get_current_user)):
+    """Get GRN by ID"""
+    grn = await db.grns.find_one({"grn_id": grn_id})
+    if not grn:
+        raise HTTPException(status_code=404, detail="GRN not found")
+    return grn
+
+@api_router.post("/grn")
+async def create_grn(data: GRNCreate, user: User = Depends(get_current_user)):
+    """Create a new Goods Receipt Note"""
+    # Get PO
+    po = await db.purchase_orders.find_one({"po_id": data.po_id})
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase Order not found")
+    
+    # Get supplier
+    supplier = await db.suppliers.find_one({"supplier_id": po["supplier_id"]})
+    
+    # Generate GRN number
+    count = await db.grns.count_documents({})
+    grn_number = f"GRN-{datetime.now().strftime('%Y%m')}-{str(count + 1).zfill(4)}"
+    
+    # Build GRN items
+    items = []
+    total = 0.0
+    for item_data in data.items:
+        # Find PO item
+        po_item = next((i for i in po["items"] if i["item_id"] == item_data.po_item_id), None)
+        if not po_item:
+            continue
+        
+        product = await db.products.find_one({"product_id": item_data.product_id})
+        
+        grn_item = GRNItem(
+            po_item_id=item_data.po_item_id,
+            product_id=item_data.product_id,
+            product_name=product["name"] if product else None,
+            ordered_quantity=po_item["quantity"],
+            received_quantity=item_data.received_quantity,
+            accepted_quantity=item_data.accepted_quantity,
+            rejected_quantity=item_data.rejected_quantity,
+            rejection_reason=item_data.rejection_reason,
+            unit_price=po_item["unit_price"]
+        )
+        items.append(grn_item.model_dump())
+        total += item_data.accepted_quantity * po_item["unit_price"]
+    
+    grn = GoodsReceiptNote(
+        grn_number=grn_number,
+        po_id=data.po_id,
+        po_number=po["po_number"],
+        supplier_id=po["supplier_id"],
+        supplier_name=supplier["name"] if supplier else None,
+        warehouse_id=data.warehouse_id,
+        items=items,
+        total_amount=total,
+        received_by=user.user_id,
+        notes=data.notes
+    )
+    
+    await db.grns.insert_one(grn.model_dump())
+    
+    # Update inventory for accepted items
+    for item in items:
+        if item["accepted_quantity"] > 0:
+            await db.inventory_stock.update_one(
+                {"product_id": item["product_id"], "warehouse_id": data.warehouse_id},
+                {"$inc": {"quantity": item["accepted_quantity"]}},
+                upsert=True
+            )
+    
+    await create_audit_log(user.user_id, "create", "grn", grn.grn_id, None, grn.model_dump())
+    
+    return grn.model_dump()
+
+@api_router.put("/grn/{grn_id}/status")
+async def update_grn_status(grn_id: str, status: GRNStatus, user: User = Depends(get_current_user)):
+    """Update GRN status"""
+    grn = await db.grns.find_one({"grn_id": grn_id})
+    if not grn:
+        raise HTTPException(status_code=404, detail="GRN not found")
+    
+    await db.grns.update_one(
+        {"grn_id": grn_id},
+        {"$set": {"status": status.value}}
+    )
+    
+    return {"message": f"GRN status updated to {status.value}"}
+
+# ========================
+# 3-WAY MATCHING API
+# ========================
+
+@api_router.get("/three-way-match")
+async def list_matches(
+    status: Optional[MatchingStatus] = None,
+    user: User = Depends(get_current_user)
+):
+    """List all 3-way matches"""
+    query = {}
+    if status:
+        query["status"] = status.value
+    
+    matches = await db.three_way_matches.find(query).sort("created_at", -1).to_list(100)
+    return matches
+
+@api_router.post("/three-way-match")
+async def create_three_way_match(
+    po_id: str,
+    grn_id: str,
+    invoice_id: str,
+    user: User = Depends(get_current_user)
+):
+    """Create a 3-way match between PO, GRN, and Invoice"""
+    # Get documents
+    po = await db.purchase_orders.find_one({"po_id": po_id})
+    grn = await db.grns.find_one({"grn_id": grn_id})
+    invoice = await db.invoices.find_one({"invoice_id": invoice_id})
+    
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    if not grn:
+        raise HTTPException(status_code=404, detail="GRN not found")
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    
+    # Get supplier info
+    supplier = await db.suppliers.find_one({"supplier_id": po["supplier_id"]})
+    
+    # Calculate totals
+    po_total = po.get("total_amount", 0)
+    grn_total = grn.get("total_amount", 0)
+    invoice_total = invoice.get("total_amount", 0)
+    
+    # Find discrepancies
+    discrepancies = []
+    variance = max(po_total, grn_total, invoice_total) - min(po_total, grn_total, invoice_total)
+    variance_percent = (variance / po_total * 100) if po_total > 0 else 0
+    
+    # Check quantity discrepancies
+    for po_item in po.get("items", []):
+        grn_item = next((g for g in grn.get("items", []) if g.get("po_item_id") == po_item.get("item_id")), None)
+        if grn_item:
+            if grn_item.get("accepted_quantity", 0) != po_item.get("quantity", 0):
+                discrepancies.append({
+                    "type": "quantity",
+                    "product_id": po_item.get("product_id"),
+                    "po_qty": po_item.get("quantity"),
+                    "grn_qty": grn_item.get("accepted_quantity"),
+                    "difference": po_item.get("quantity", 0) - grn_item.get("accepted_quantity", 0)
+                })
+    
+    # Determine status
+    if variance == 0 and len(discrepancies) == 0:
+        status = MatchingStatus.FULL_MATCH
+    elif variance_percent <= 5 and len(discrepancies) <= 2:
+        status = MatchingStatus.PARTIAL_MATCH
+    else:
+        status = MatchingStatus.DISCREPANCY
+    
+    match = ThreeWayMatch(
+        po_id=po_id,
+        po_number=po["po_number"],
+        grn_id=grn_id,
+        grn_number=grn["grn_number"],
+        invoice_id=invoice_id,
+        invoice_number=invoice["invoice_number"],
+        supplier_id=po["supplier_id"],
+        supplier_name=supplier["name"] if supplier else None,
+        status=status,
+        po_total=po_total,
+        grn_total=grn_total,
+        invoice_total=invoice_total,
+        variance=variance,
+        variance_percent=round(variance_percent, 2),
+        discrepancies=discrepancies
+    )
+    
+    await db.three_way_matches.insert_one(match.model_dump())
+    await create_audit_log(user.user_id, "create", "three_way_match", match.match_id, None, match.model_dump())
+    
+    return match.model_dump()
+
+@api_router.put("/three-way-match/{match_id}/approve")
+async def approve_three_way_match(match_id: str, notes: str = "", user: User = Depends(get_current_user)):
+    """Approve a 3-way match"""
+    match = await db.three_way_matches.find_one({"match_id": match_id})
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+    
+    await db.three_way_matches.update_one(
+        {"match_id": match_id},
+        {"$set": {
+            "status": "full_match",
+            "approved_by": user.user_id,
+            "approved_at": datetime.now(timezone.utc),
+            "notes": notes
+        }}
+    )
+    
+    # Update related invoice as ready for payment
+    await db.invoices.update_one(
+        {"invoice_id": match["invoice_id"]},
+        {"$set": {"matching_approved": True}}
+    )
+    
+    return {"message": "Match approved for payment"}
+
+# ========================
+# FINANCIAL REPORTS API
+# ========================
+
+@api_router.get("/reports/trial-balance")
+async def get_trial_balance(
+    as_of_date: Optional[str] = None,
+    user: User = Depends(get_current_user)
+):
+    """Generate Trial Balance Report"""
+    date = datetime.fromisoformat(as_of_date) if as_of_date else datetime.now(timezone.utc)
+    
+    # Get all accounts
+    accounts = await db.chart_of_accounts.find({}).to_list(100)
+    
+    # Calculate balances from transactions
+    trial_balance = []
+    total_debit = 0.0
+    total_credit = 0.0
+    
+    # Assets (Debit balances)
+    assets = []
+    inventory_value = 0.0
+    products = await db.products.find({}).to_list(1000)
+    for product in products:
+        stock = await db.inventory_stock.find({"product_id": product["product_id"]}).to_list(100)
+        total_qty = sum(s.get("quantity", 0) for s in stock)
+        inventory_value += total_qty * product.get("cost_price", 0)
+    
+    assets.append({"account": "Inventory", "type": "asset", "debit": inventory_value, "credit": 0})
+    total_debit += inventory_value
+    
+    # Calculate AR from unpaid sales invoices
+    ar = await db.invoices.aggregate([
+        {"$match": {"type": "sale", "status": {"$in": ["unpaid", "partial"]}}},
+        {"$group": {"_id": None, "total": {"$sum": "$total_amount"}}}
+    ]).to_list(1)
+    ar_total = ar[0]["total"] if ar else 0
+    assets.append({"account": "Accounts Receivable", "type": "asset", "debit": ar_total, "credit": 0})
+    total_debit += ar_total
+    
+    # Liabilities (Credit balances)
+    liabilities = []
+    
+    # Calculate AP from unpaid purchase invoices
+    ap = await db.invoices.aggregate([
+        {"$match": {"type": "purchase", "status": {"$in": ["unpaid", "partial"]}}},
+        {"$group": {"_id": None, "total": {"$sum": "$total_amount"}}}
+    ]).to_list(1)
+    ap_total = ap[0]["total"] if ap else 0
+    liabilities.append({"account": "Accounts Payable", "type": "liability", "debit": 0, "credit": ap_total})
+    total_credit += ap_total
+    
+    # Income (Credit balances)
+    income = []
+    sales = await db.sales_orders.aggregate([
+        {"$match": {"status": {"$in": ["delivered", "paid"]}}},
+        {"$group": {"_id": None, "total": {"$sum": "$total_amount"}}}
+    ]).to_list(1)
+    sales_total = sales[0]["total"] if sales else 0
+    income.append({"account": "Sales Revenue", "type": "income", "debit": 0, "credit": sales_total})
+    total_credit += sales_total
+    
+    # Expenses (Debit balances)
+    expenses_data = []
+    expenses = await db.expenses.aggregate([
+        {"$group": {"_id": "$category", "total": {"$sum": "$amount"}}}
+    ]).to_list(100)
+    for exp in expenses:
+        expenses_data.append({"account": f"Expense - {exp['_id']}", "type": "expense", "debit": exp["total"], "credit": 0})
+        total_debit += exp["total"]
+    
+    # COGS
+    cogs = await db.purchase_orders.aggregate([
+        {"$match": {"status": {"$in": ["received", "paid"]}}},
+        {"$group": {"_id": None, "total": {"$sum": "$total_amount"}}}
+    ]).to_list(1)
+    cogs_total = cogs[0]["total"] if cogs else 0
+    expenses_data.append({"account": "Cost of Goods Sold", "type": "expense", "debit": cogs_total, "credit": 0})
+    total_debit += cogs_total
+    
+    # Equity (balancing)
+    equity_total = total_credit - total_debit
+    equity = [{"account": "Retained Earnings", "type": "equity", "debit": 0 if equity_total >= 0 else abs(equity_total), "credit": equity_total if equity_total >= 0 else 0}]
+    
+    if equity_total >= 0:
+        total_credit += equity_total
+    else:
+        total_debit += abs(equity_total)
+    
+    return {
+        "report_date": date.isoformat(),
+        "assets": assets,
+        "liabilities": liabilities,
+        "equity": equity,
+        "income": income,
+        "expenses": expenses_data,
+        "total_debit": round(total_debit, 2),
+        "total_credit": round(total_credit, 2),
+        "is_balanced": abs(total_debit - total_credit) < 0.01
+    }
+
+@api_router.get("/reports/balance-sheet")
+async def get_balance_sheet(
+    as_of_date: Optional[str] = None,
+    user: User = Depends(get_current_user)
+):
+    """Generate Balance Sheet Report"""
+    date = datetime.fromisoformat(as_of_date) if as_of_date else datetime.now(timezone.utc)
+    
+    # ASSETS
+    # Current Assets
+    inventory_value = 0.0
+    products = await db.products.find({}).to_list(1000)
+    for product in products:
+        stock = await db.inventory_stock.find({"product_id": product["product_id"]}).to_list(100)
+        total_qty = sum(s.get("quantity", 0) for s in stock)
+        inventory_value += total_qty * product.get("cost_price", 0)
+    
+    ar = await db.invoices.aggregate([
+        {"$match": {"type": "sale", "status": {"$in": ["unpaid", "partial"]}}},
+        {"$group": {"_id": None, "total": {"$sum": "$total_amount"}}}
+    ]).to_list(1)
+    ar_total = ar[0]["total"] if ar else 0
+    
+    current_assets = [
+        {"name": "Inventory", "amount": round(inventory_value, 2)},
+        {"name": "Accounts Receivable", "amount": round(ar_total, 2)},
+    ]
+    total_current_assets = inventory_value + ar_total
+    
+    # Fixed Assets (placeholder)
+    fixed_assets = [
+        {"name": "Equipment", "amount": 0},
+        {"name": "Vehicles", "amount": 0},
+    ]
+    total_fixed_assets = 0
+    
+    total_assets = total_current_assets + total_fixed_assets
+    
+    # LIABILITIES
+    ap = await db.invoices.aggregate([
+        {"$match": {"type": "purchase", "status": {"$in": ["unpaid", "partial"]}}},
+        {"$group": {"_id": None, "total": {"$sum": "$total_amount"}}}
+    ]).to_list(1)
+    ap_total = ap[0]["total"] if ap else 0
+    
+    current_liabilities = [
+        {"name": "Accounts Payable", "amount": round(ap_total, 2)},
+    ]
+    total_current_liabilities = ap_total
+    
+    long_term_liabilities = []
+    total_long_term_liabilities = 0
+    
+    total_liabilities = total_current_liabilities + total_long_term_liabilities
+    
+    # EQUITY
+    # Calculate retained earnings from P&L
+    sales = await db.sales_orders.aggregate([
+        {"$match": {"status": {"$in": ["delivered", "paid"]}}},
+        {"$group": {"_id": None, "total": {"$sum": "$total_amount"}}}
+    ]).to_list(1)
+    revenue = sales[0]["total"] if sales else 0
+    
+    expenses = await db.expenses.aggregate([
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]).to_list(1)
+    total_expenses = expenses[0]["total"] if expenses else 0
+    
+    cogs = await db.purchase_orders.aggregate([
+        {"$match": {"status": {"$in": ["received", "paid"]}}},
+        {"$group": {"_id": None, "total": {"$sum": "$total_amount"}}}
+    ]).to_list(1)
+    cogs_total = cogs[0]["total"] if cogs else 0
+    
+    net_income = revenue - cogs_total - total_expenses
+    
+    equity_items = [
+        {"name": "Capital", "amount": 0},
+        {"name": "Retained Earnings", "amount": round(net_income, 2)},
+    ]
+    total_equity = net_income
+    
+    return {
+        "report_date": date.isoformat(),
+        "assets": {
+            "current_assets": current_assets,
+            "total_current_assets": round(total_current_assets, 2),
+            "fixed_assets": fixed_assets,
+            "total_fixed_assets": round(total_fixed_assets, 2),
+            "total_assets": round(total_assets, 2)
+        },
+        "liabilities": {
+            "current_liabilities": current_liabilities,
+            "total_current_liabilities": round(total_current_liabilities, 2),
+            "long_term_liabilities": long_term_liabilities,
+            "total_long_term_liabilities": round(total_long_term_liabilities, 2),
+            "total_liabilities": round(total_liabilities, 2)
+        },
+        "equity": {
+            "items": equity_items,
+            "total_equity": round(total_equity, 2)
+        },
+        "total_liabilities_and_equity": round(total_liabilities + total_equity, 2),
+        "is_balanced": abs(total_assets - (total_liabilities + total_equity)) < 0.01
+    }
+
+# ========================
+# SUPPLIER/DISTRIBUTOR PERFORMANCE API
+# ========================
+
+@api_router.get("/reports/supplier-performance")
+async def get_supplier_performance(user: User = Depends(get_current_user)):
+    """Get supplier performance dashboard data"""
+    suppliers = await db.suppliers.find({}).to_list(100)
+    
+    performance_data = []
+    for supplier in suppliers:
+        supplier_id = supplier["supplier_id"]
+        
+        # Get PO statistics
+        pos = await db.purchase_orders.find({"supplier_id": supplier_id}).to_list(1000)
+        total_orders = len(pos)
+        total_value = sum(po.get("total_amount", 0) for po in pos)
+        
+        # Calculate on-time delivery
+        grns = await db.grns.find({"supplier_id": supplier_id}).to_list(1000)
+        on_time = 0
+        late = 0
+        for grn in grns:
+            po = next((p for p in pos if p["po_id"] == grn["po_id"]), None)
+            if po and po.get("expected_date"):
+                if grn.get("received_date", datetime.now(timezone.utc)) <= po["expected_date"]:
+                    on_time += 1
+                else:
+                    late += 1
+        
+        # Calculate quality (accepted vs rejected)
+        total_accepted = sum(sum(item.get("accepted_quantity", 0) for item in grn.get("items", [])) for grn in grns)
+        total_rejected = sum(sum(item.get("rejected_quantity", 0) for item in grn.get("items", [])) for grn in grns)
+        quality_rate = (total_accepted / (total_accepted + total_rejected) * 100) if (total_accepted + total_rejected) > 0 else 100
+        
+        # Delivery rate
+        delivery_rate = (on_time / (on_time + late) * 100) if (on_time + late) > 0 else 100
+        
+        performance_data.append({
+            "supplier_id": supplier_id,
+            "supplier_name": supplier["name"],
+            "total_orders": total_orders,
+            "total_value": round(total_value, 2),
+            "on_time_deliveries": on_time,
+            "late_deliveries": late,
+            "delivery_rate": round(delivery_rate, 1),
+            "quality_rate": round(quality_rate, 1),
+            "overall_score": round((delivery_rate + quality_rate) / 2, 1),
+            "rating": supplier.get("rating", 0)
+        })
+    
+    # Sort by overall score
+    performance_data.sort(key=lambda x: x["overall_score"], reverse=True)
+    
+    return {
+        "suppliers": performance_data,
+        "summary": {
+            "total_suppliers": len(performance_data),
+            "avg_delivery_rate": round(sum(p["delivery_rate"] for p in performance_data) / len(performance_data), 1) if performance_data else 0,
+            "avg_quality_rate": round(sum(p["quality_rate"] for p in performance_data) / len(performance_data), 1) if performance_data else 0,
+            "top_performer": performance_data[0]["supplier_name"] if performance_data else None
+        }
+    }
+
+@api_router.get("/reports/distributor-performance")
+async def get_distributor_performance(user: User = Depends(get_current_user)):
+    """Get distributor performance dashboard data"""
+    distributors = await db.distributors.find({}).to_list(100)
+    
+    performance_data = []
+    for dist in distributors:
+        dist_id = dist["distributor_id"]
+        
+        # Get SO statistics
+        sos = await db.sales_orders.find({"distributor_id": dist_id}).to_list(1000)
+        total_orders = len(sos)
+        total_value = sum(so.get("total_amount", 0) for so in sos)
+        
+        # Get invoices for payment analysis
+        invoices = await db.invoices.find({"entity_id": dist_id, "type": "sale"}).to_list(1000)
+        paid_invoices = [inv for inv in invoices if inv.get("status") == "paid"]
+        unpaid_value = sum(inv.get("total_amount", 0) for inv in invoices if inv.get("status") in ["unpaid", "partial"])
+        
+        # Calculate payment rate
+        payment_rate = (len(paid_invoices) / len(invoices) * 100) if invoices else 100
+        
+        # Calculate average order value
+        avg_order_value = total_value / total_orders if total_orders > 0 else 0
+        
+        # Get delivery info
+        deliveries = await db.delivery_notes.find({"distributor_id": dist_id}).to_list(1000)
+        completed_deliveries = len([d for d in deliveries if d.get("status") == "delivered"])
+        
+        performance_data.append({
+            "distributor_id": dist_id,
+            "distributor_name": dist["name"],
+            "territory": dist.get("territory", "N/A"),
+            "total_orders": total_orders,
+            "total_value": round(total_value, 2),
+            "avg_order_value": round(avg_order_value, 2),
+            "total_invoices": len(invoices),
+            "paid_invoices": len(paid_invoices),
+            "payment_rate": round(payment_rate, 1),
+            "outstanding_balance": round(unpaid_value, 2),
+            "completed_deliveries": completed_deliveries,
+            "credit_limit": dist.get("credit_limit", 0),
+            "commission_rate": dist.get("commission_rate", 0)
+        })
+    
+    # Sort by total value
+    performance_data.sort(key=lambda x: x["total_value"], reverse=True)
+    
+    return {
+        "distributors": performance_data,
+        "summary": {
+            "total_distributors": len(performance_data),
+            "total_revenue": round(sum(p["total_value"] for p in performance_data), 2),
+            "total_outstanding": round(sum(p["outstanding_balance"] for p in performance_data), 2),
+            "avg_payment_rate": round(sum(p["payment_rate"] for p in performance_data) / len(performance_data), 1) if performance_data else 0,
+            "top_performer": performance_data[0]["distributor_name"] if performance_data else None
+        }
+    }
 
 # ========================
 # HEALTH CHECK

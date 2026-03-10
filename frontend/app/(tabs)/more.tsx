@@ -235,6 +235,41 @@ export default function MoreScreen() {
             leftIcon="construct-outline"
             onPress={() => router.push('/bom')}
           />
+          <ListItem
+            title="Purchase Requisitions"
+            subtitle="Request materials with approval"
+            leftIcon="document-attach-outline"
+            onPress={() => router.push('/requisitions')}
+          />
+          <ListItem
+            title="Goods Receipt (GRN)"
+            subtitle="Receive and verify goods"
+            leftIcon="receipt-outline"
+            onPress={() => router.push('/grn')}
+          />
+          <ListItem
+            title="3-Way Matching"
+            subtitle="PO-GRN-Invoice verification"
+            leftIcon="git-compare-outline"
+            onPress={() => router.push('/three-way-match')}
+          />
+        </View>
+
+        {/* Financial Reports */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Financial Reports</Text>
+          <ListItem
+            title="Balance Sheet & Trial Balance"
+            subtitle="Financial statements"
+            leftIcon="stats-chart-outline"
+            onPress={() => router.push('/financial-reports')}
+          />
+          <ListItem
+            title="Performance Dashboard"
+            subtitle="Supplier & Distributor metrics"
+            leftIcon="analytics-outline"
+            onPress={() => router.push('/performance-dashboard')}
+          />
         </View>
 
         {/* Reports Section */}
