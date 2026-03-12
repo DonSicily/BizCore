@@ -60,9 +60,10 @@
       "eas": {
         "projectId": "9290b55b-39eb-46ad-93b3-539ada188a1a"
       },
-      "backendUrl": "https://erp-mobile-dev.preview.emergentagent.com",
+      "backendUrl": "https://erp-mobile-dev-22.preview.emergentagent.com",
       "router": {
         "origin": false
       }
     }
   }
+}
