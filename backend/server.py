@@ -735,7 +735,7 @@ async def create_session(request: Request, response: Response):
     )
     
     user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-    return user
+    return {**user, "session_token": session_token}
 
 @api_router.get("/auth/me")
 async def get_me(user: User = Depends(get_current_user)):
