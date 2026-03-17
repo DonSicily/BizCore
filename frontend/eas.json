@@ -5,6 +5,9 @@
   },
   "build": {
     "preview": {
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://erp-mobile-dev.preview.emergentagent.com"
+      },
       "distribution": "internal",
       "android": {
         "buildType": "apk",
@@ -14,6 +17,9 @@
       "withoutCredentials": true
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://erp-mobile-dev.preview.emergentagent.com"
+      },
       "android": {
         "buildType": "app-bundle"
       }
