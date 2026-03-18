@@ -346,7 +346,7 @@ export default function BOMScreen() {
             <Button title="Create BOM" onPress={handleCreateBOM} style={{ marginTop: 20 }} />
             <View style={{ height: 40 }} />
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Detail Modal */}
@@ -410,7 +410,7 @@ export default function BOMScreen() {
               <View style={{ height: 40 }} />
             </ScrollView>
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Produce Modal */}
