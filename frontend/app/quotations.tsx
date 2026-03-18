@@ -444,7 +444,7 @@ export default function QuotationsScreen() {
             <Button title="Create Quotation" onPress={handleCreateQuotation} style={{ marginTop: 16 }} />
             <View style={{ height: 40 }} />
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Detail Modal */}
