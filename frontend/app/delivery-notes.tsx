@@ -192,7 +192,7 @@ export default function DeliveryNotesScreen() {
 
       {/* Detail Modal */}
       <Modal visible={showDetailModal} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modalContainer}>
+        <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowDetailModal(false)}>
               <Ionicons name="close" size={24} color={Colors.text} />
