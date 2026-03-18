@@ -373,7 +373,7 @@ export default function RequisitionsScreen() {
             <Button title="Create Requisition" onPress={handleCreate} style={{ marginTop: 20 }} />
             <View style={{ height: 40 }} />
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Detail Modal */}
@@ -443,7 +443,7 @@ export default function RequisitionsScreen() {
               <View style={{ height: 40 }} />
             </ScrollView>
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Convert Modal */}
