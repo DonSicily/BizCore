@@ -328,7 +328,7 @@ export default function GRNScreen() {
             )}
             <View style={{ height: 40 }} />
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Detail Modal */}
