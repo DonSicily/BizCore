@@ -558,7 +558,7 @@ export default function QuotationsScreen() {
               <View style={{ height: 40 }} />
             </ScrollView>
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
