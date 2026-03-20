@@ -10,7 +10,7 @@ import {
   Alert,
   Dimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PieChart } from 'react-native-gifted-charts';
 import {
@@ -29,6 +29,7 @@ const { width } = Dimensions.get('window');
 
 type FinanceTab = 'overview' | 'expenses' | 'invoices' | 'payments';
 
+const insets = useSafeAreaInsets();
 const expenseCategories = [
   { value: 'office', label: 'Office' },
   { value: 'travel', label: 'Travel' },
