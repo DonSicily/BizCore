@@ -10,7 +10,7 @@ import {
   Alert,
   Linking,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   Colors,
@@ -41,6 +41,7 @@ export default function PartnersScreen() {
     deleteDistributor,
   } = useAppStore();
 
+  const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<PartnerTab>('suppliers');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -378,7 +379,7 @@ export default function PartnersScreen() {
       {/* Add Modal */}
       <Modal visible={showAddModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 Add {activeTab === 'suppliers' ? 'Supplier' : 'Distributor'}
@@ -471,7 +472,7 @@ export default function PartnersScreen() {
       {/* Detail/Edit Modal */}
       <Modal visible={showDetailModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 Edit {activeTab === 'suppliers' ? 'Supplier' : 'Distributor'}
