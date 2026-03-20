@@ -315,7 +315,7 @@ export default function ThreeWayMatchScreen() {
             <Button title="Create Match" onPress={handleCreateMatch} style={{ marginTop: 24 }} />
             <View style={{ height: 40 }} />
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Detail Modal */}
@@ -404,7 +404,7 @@ export default function ThreeWayMatchScreen() {
               <View style={{ height: 40 }} />
             </ScrollView>
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
