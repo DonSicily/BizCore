@@ -10,7 +10,7 @@ import {
   RefreshControl,
   Linking,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import {
@@ -30,6 +30,7 @@ import clientConfig, { isFeatureEnabled } from '../../src/config/clientConfig';
 import api from '../../src/utils/api';
 
 export default function MoreScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const { warehouses, fetchWarehouses, createWarehouse, deleteWarehouse } = useAppStore();
@@ -338,7 +339,7 @@ export default function MoreScreen() {
       {/* Warehouses Modal */}
       <Modal visible={showWarehouseModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Warehouses</Text>
               <TouchableOpacity onPress={() => setShowWarehouseModal(false)}>
@@ -398,7 +399,7 @@ export default function MoreScreen() {
       {/* Users Modal */}
       <Modal visible={showUsersModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Team Members</Text>
               <TouchableOpacity onPress={() => setShowUsersModal(false)}>
@@ -446,7 +447,7 @@ export default function MoreScreen() {
       {/* Reports Modal */}
       <Modal visible={showReportsModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Stock Summary Report</Text>
               <TouchableOpacity onPress={() => setShowReportsModal(false)}>
