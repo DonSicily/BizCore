@@ -10,7 +10,7 @@ import {
   Alert,
   TextInput,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   Colors,
@@ -42,6 +42,7 @@ export default function InventoryScreen() {
     adjustInventory,
   } = useAppStore();
 
+  const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -471,7 +472,7 @@ export default function InventoryScreen() {
       {/* Add Product Modal */}
       <Modal visible={showAddModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Product</Text>
               <TouchableOpacity onPress={() => setShowAddModal(false)}>
@@ -575,7 +576,7 @@ export default function InventoryScreen() {
       {/* Product Detail Modal */}
       <Modal visible={showDetailModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Edit Product</Text>
               <TouchableOpacity onPress={() => setShowDetailModal(false)}>
@@ -692,7 +693,7 @@ export default function InventoryScreen() {
       {/* Adjust Stock Modal */}
       <Modal visible={showAdjustModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Adjust Stock</Text>
               <TouchableOpacity onPress={() => setShowAdjustModal(false)}>
