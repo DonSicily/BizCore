@@ -486,7 +486,7 @@ export default function FinanceScreen() {
       {/* Add Expense Modal */}
       <Modal visible={showExpenseModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Record Expense</Text>
               <TouchableOpacity onPress={() => setShowExpenseModal(false)}>
@@ -566,7 +566,7 @@ export default function FinanceScreen() {
       {/* Record Payment Modal */}
       <Modal visible={showPaymentModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Record Payment</Text>
               <TouchableOpacity onPress={() => setShowPaymentModal(false)}>
