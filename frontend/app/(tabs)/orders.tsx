@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
   Text,
@@ -47,6 +47,7 @@ export default function OrdersScreen() {
     updateSalesOrder,
   } = useAppStore();
 
+  const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<OrderTab>('purchase');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -378,7 +379,7 @@ export default function OrdersScreen() {
       {/* Add Order Modal */}
       <Modal visible={showAddModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 New {activeTab === 'purchase' ? 'Purchase' : 'Sales'} Order
@@ -559,7 +560,7 @@ export default function OrdersScreen() {
       {/* Order Detail Modal */}
       <Modal visible={showDetailModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Order Details</Text>
               <TouchableOpacity onPress={() => setShowDetailModal(false)}>
